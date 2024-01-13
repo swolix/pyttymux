@@ -128,8 +128,9 @@ class TTYMux:
                                     if not active_rx_pty is None:
                                         os.write(active_rx_pty, b"\xff")
                                 elif c == 0xFD:
-                                    self.serial.write(bytes([0xff, active_tx_channel]))
-                                    channel_update_time = time.time()
+                                    if not active_tx_channel is None:
+                                        self.serial.write(bytes([0xff, active_tx_channel]))
+                                        channel_update_time = time.time()
                                 else:
                                     try:
                                         active_rx_pty = self.ptys[c][0]
@@ -153,7 +154,8 @@ class TTYMux:
                             self.serial.write(b"\xff\xfe")
                         else:
                             self.serial.write(bytes([c]))
-            if self.resend_channel_timer > 0 and time.time() - channel_update_time > self.resend_channel_timer:
+            if (not active_tx_channel is None and self.resend_channel_timer > 0 and
+                time.time() - channel_update_time > self.resend_channel_timer):
                 self.serial.write(bytes([0xff, active_tx_channel]))
                 channel_update_time = time.time()
 
