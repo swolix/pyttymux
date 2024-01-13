@@ -20,7 +20,16 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-# 
+#
+#
+#
+# Multiplexes multiple (UART) channels over a single one using the following protocol;
+#   * 0xFF is used as escape character
+#   * 0xFF is escaped as 0xFF 0xFE
+#   * Multiple 0xFF should considered as one
+#   * 0xFF <1byte_channel_id> selects a channel (0-249)
+#   * 0xFF 0xFD request otherside to retransmit channel id
+
 import os, sys
 import ctypes
 import termios
@@ -45,10 +54,10 @@ class TTYMux:
             raise Exception("Already running")
         elif id in self.ptys:
             raise Exception("Channel already open")
-        elif id <= 0:
-            raise Exception("Channel must be > 0")
-        elif id > 200:
-            raise Exception("Channel must be <= 200")
+        elif id < 0:
+            raise Exception("Channel must be >= 0")
+        elif id >= 250:
+            raise Exception("Channel must be < 250")
 
         pty = self.libc.posix_openpt(os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         if pty < 0: raise Exception("Could not open pty")
@@ -107,15 +116,19 @@ class TTYMux:
                         if c == 0xff:
                             rx_escaped = True
                         elif rx_escaped:
-                            if c == 0xFE:
-                                if not active_rx_pty is None:
-                                    os.write(active_rx_pty, b"\xff")
-                            else:
-                                try:
-                                    active_rx_pty = self.ptys[c][0]
-                                except KeyError:
-                                    active_rx_pty = None
-                            rx_escaped = False
+                            if c != 0xFF:
+                                if c == 0xFE:
+                                    if not active_rx_pty is None:
+                                        os.write(active_rx_pty, b"\xff")
+                                elif c == 0xFD:
+                                    self.serial.write(bytes([0xff, active_tx_channel]))
+                                    channel_update_time = time.time()
+                                else:
+                                    try:
+                                        active_rx_pty = self.ptys[c][0]
+                                    except KeyError:
+                                        active_rx_pty = None
+                                rx_escaped = False
                         elif not active_rx_pty is None:
                             os.write(active_rx_pty, bytes([c]))
                 else:
