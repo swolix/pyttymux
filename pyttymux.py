@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # PyTTYMux, based on SerialMux by Al Williams (https://github.com/wd5gnr/SerialMux)
 #
 # Copyright 2024, Sijmen Woutersen
