@@ -122,6 +122,8 @@ class TTYMux:
 
         while self.running:
             for pty, events in poll.poll(1000):
+                if (events & ~select.EPOLLIN) != 0:
+                    raise Exception("Unkown event {:x} from fd {}".format(events, pty))
                 if pty == self.serial.fileno():
                     for c in self.serial.read(128):
                         if c == 0xff:
