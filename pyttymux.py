@@ -26,12 +26,14 @@ import ctypes
 import termios
 import select
 import argparse
+import time
 
 import serial
 
 class TTYMux:
-    def __init__(self, **kwargs):
+    def __init__(self, resend_channel_timer=10, **kwargs):
         self.ptys = {}
+        self.resend_channel_timer = resend_channel_timer
         self.serial = serial.Serial(timeout=0, **kwargs)
         self.serial.nonblocking()
         self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
@@ -87,6 +89,7 @@ class TTYMux:
 
     def run(self):
         self.running = True
+        channel_update_time = 0
 
         channels = {}
         poll = select.poll()
@@ -121,11 +124,16 @@ class TTYMux:
                     if id != active_tx_channel:
                         self.serial.write(bytes([0xff, id]))
                         active_tx_channel = id
+                        channel_update_time = time.time()
                     for c in data:
                         if c == 0xFF:
                             self.serial.write(b"\xff\xfe")
                         else:
                             self.serial.write(bytes([c]))
+            if self.resend_channel_timer > 0 and time.time() - channel_update_time > self.resend_channel_timer:
+                self.serial.write(bytes([0xff, active_tx_channel]))
+                channel_update_time = time.time()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
