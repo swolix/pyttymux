@@ -179,7 +179,7 @@ class TTYMux:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("port", help="Serial port")
-    parser.add_argument("-b", "--baudrate", help="Serial port baudrate")
+    parser.add_argument("-b", "--baudrate", default=115200, help="Serial port baudrate")
     parser.add_argument("-p", "--ports", metavar="MUXPORT", action='append', help="Add mux port in channel_id:pty_path format")
     parser.add_argument("-v", "--verbose", dest="level", action='store_const', const=logging.INFO, default=logging.WARN, help="Verbose logging")
     parser.add_argument("-d", "--debug", dest="level", action='store_const', const=logging.DEBUG, help="Debug logging")
@@ -193,7 +193,7 @@ if __name__ == "__main__":
         parser.print_usage()
         sys.exit(-1)
 
-    ttymux = TTYMux(port=args.port)
+    ttymux = TTYMux(port=args.port, baudrate=args.baudrate)
     for port in args.ports:
         try:
             channel, path = port.split(":", 2)
