@@ -53,21 +53,21 @@ if __name__ == "__main__":
 
     print("Blocking port")
     for i in range(50):
-        print("    {}/{}".format(i+1, 50))
         a.write(os.urandom(1024))
         b.write(os.urandom(4))
         assert len(b.read(4)) == 4
 
     print("Single channel throughput test")
     start_time = time.time()
-    c.write(os.urandom(256))
+    c.timeout = 0
+    rx = tx = 0
     for i in range(400):
-        c.write(os.urandom(256))
-        x = c.read(256)
-        assert len(x) == 256
-    x = c.read(256)
-    assert len(x) == 256
+        tx += c.write(os.urandom(256))
+        rx += len(c.read(1024))
+    c.timeout = 0.1
+    while rx < tx:
+        rx += len(c.read(1024))
     duration = time.time() - start_time
-    print("{} bytes/sec".format(401*256 / duration))
+    print("{:.1f} bytes/sec".format(400*256 / duration))
 
     print("Done")
