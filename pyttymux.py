@@ -87,17 +87,21 @@ class TTYMux:
 
         termios.tcsetattr(pty, termios.TCSANOW, attr)
 
+        # open slave device to avoid problems when the mux-client closes the mux fd
+        ptsname = self.libc.ptsname(pty).decode("utf-8")
+        sfd = open(ptsname)
+
         # setup link
         try:
             os.unlink(path)
         except FileNotFoundError:
             pass
-        os.symlink(self.libc.ptsname(pty).decode("utf-8"), path) 
+        os.symlink(ptsname, path)
 
-        self.ptys[id] = (pty, path)
+        self.ptys[id] = (pty, path, sfd)
 
     def __del__(self):
-        for id, (pty, link) in self.ptys.items():
+        for id, (pty, link, sfd) in self.ptys.items():
             os.unlink(link)
 
     def run(self):
@@ -107,7 +111,7 @@ class TTYMux:
 
         channels = {}
         poll = select.poll()
-        for id, (pty, link) in self.ptys.items():
+        for id, (pty, link, fd) in self.ptys.items():
             poll.register(pty, select.POLLIN)
             channels[pty] = id
         active_tx_channel = active_rx_pty = None
@@ -117,7 +121,7 @@ class TTYMux:
         logging.info("Mux started")
 
         while self.running:
-            for pty, _ in poll.poll(1000):
+            for pty, events in poll.poll(1000):
                 if pty == self.serial.fileno():
                     for c in self.serial.read(128):
                         if c == 0xff:
