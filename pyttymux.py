@@ -36,14 +36,16 @@ import termios
 import select
 import argparse
 import time
+import logging
 
 import serial
 
 class TTYMux:
-    def __init__(self, resend_channel_timer=10, **kwargs):
+    def __init__(self, port, resend_channel_timer=10, **kwargs):
         self.ptys = {}
         self.resend_channel_timer = resend_channel_timer
-        self.serial = serial.Serial(timeout=0, **kwargs)
+        logging.info("Opening serial port on {}...".format(port))
+        self.serial = serial.Serial(timeout=0, port=port, **kwargs)
         self.serial.nonblocking()
         self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
         self.libc.ptsname.restype = ctypes.c_char_p
@@ -58,6 +60,8 @@ class TTYMux:
             raise Exception("Channel must be >= 0")
         elif id >= 250:
             raise Exception("Channel must be < 250")
+
+        logging.info("Opening mux channel {} on {}...".format(id, path))
 
         pty = self.libc.posix_openpt(os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         if pty < 0: raise Exception("Could not open pty")
@@ -99,6 +103,7 @@ class TTYMux:
     def run(self):
         self.running = True
         channel_update_time = 0
+        unknown_channels = [False]*256
 
         channels = {}
         poll = select.poll()
@@ -108,6 +113,8 @@ class TTYMux:
         active_tx_channel = active_rx_pty = None
         rx_escaped = False
         poll.register(self.serial.fileno(), select.POLLIN)
+
+        logging.info("Mux started")
 
         while self.running:
             for pty, _ in poll.poll(1000):
@@ -127,6 +134,9 @@ class TTYMux:
                                     try:
                                         active_rx_pty = self.ptys[c][0]
                                     except KeyError:
+                                        if not unknown_channels[c]:
+                                            logging.error("Received data for unknown channel {}".format(c))
+                                            unknown_channels[c] = True
                                         active_rx_pty = None
                                 rx_escaped = False
                         elif not active_rx_pty is None:
@@ -153,8 +163,12 @@ if __name__ == "__main__":
     parser.add_argument("port", help="Serial port")
     parser.add_argument("-b", "--baudrate", help="Serial port baudrate")
     parser.add_argument("-p", "--ports", metavar="MUXPORT", action='append', help="Add mux port in channel_id:pty_path format")
+    parser.add_argument("-v", "--verbose", dest="level", action='store_const', const=logging.INFO, default=logging.WARN, help="Verbose logging")
+    parser.add_argument("-d", "--debug", dest="level", action='store_const', const=logging.DEBUG, help="Debug logging")
 
     args = parser.parse_args()
+
+    logging.getLogger().setLevel(args.level)
 
     if args.ports is None:
         sys.stderr.write("At least one mux port is required\n")
