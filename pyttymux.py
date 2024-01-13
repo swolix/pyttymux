@@ -61,12 +61,12 @@ class TTYMux:
         elif id >= 250:
             raise Exception("Channel must be < 250")
 
-        logging.info("Opening mux channel {} on {}...".format(id, path))
-
         pty = self.libc.posix_openpt(os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         if pty < 0: raise Exception("Could not open pty")
         self.libc.grantpt(pty)
         self.libc.unlockpt(pty)
+
+        logging.info("Opening mux channel {} at {} (fd={})...".format(id, os.path.abspath(path), pty))
 
         attr = termios.tcgetattr(pty)
 
@@ -108,6 +108,7 @@ class TTYMux:
         self.running = True
         channel_update_time = 0
         unknown_channels = [False]*256
+        blocking_channels = {}
 
         channels = {}
         poll = select.poll()
@@ -126,13 +127,13 @@ class TTYMux:
                     raise Exception("Unkown event {:x} from fd {}".format(events, pty))
                 if pty == self.serial.fileno():
                     for c in self.serial.read(128):
+                        r = None
                         if c == 0xff:
                             rx_escaped = True
                         elif rx_escaped:
                             if c != 0xFF:
                                 if c == 0xFE:
-                                    if not active_rx_pty is None:
-                                        os.write(active_rx_pty, b"\xff")
+                                    r = b"\xff"
                                 elif c == 0xFD:
                                     if not active_tx_channel is None:
                                         self.serial.write(bytes([0xff, active_tx_channel]))
@@ -147,7 +148,16 @@ class TTYMux:
                                         active_rx_pty = None
                                 rx_escaped = False
                         elif not active_rx_pty is None:
-                            os.write(active_rx_pty, bytes([c]))
+                            r = bytes([c])
+                        if not r is None and not active_rx_pty is None:
+                            try:
+                                os.write(active_rx_pty, r)
+                            except BlockingIOError:
+                                if not blocking_channels.get(active_rx_pty, False):
+                                    logging.error("Dropping data for pty {} (blocked)".format(active_rx_pty))
+                                    blocking_channels[active_rx_pty] = True
+                            else:
+                                blocking_channels[active_rx_pty] = False
                 else:
                     id = channels[pty]
                     data = os.read(pty, 128)
